@@ -1,0 +1,194 @@
+# 1. FIRST RUN THIS CELL TO SETUP
+!pip install plotly --quiet
+!pip install ipywidgets --quiet
+!jupyter nbextension enable --py widgetsnbextension --sys-prefix
+
+from google.colab import output
+output.enable_custom_widget_manager()
+
+# 2. THEN RUN THIS CELL FOR IMPORTS
+import pandas as pd
+import numpy as np
+import plotly.express as px
+import plotly.graph_objects as go
+from ipywidgets import widgets
+from IPython.display import display, clear_output
+
+# 3. RUN THIS TO SETUP DATA
+your_data = {
+    'team': ['A1', 'A2', 'B1', 'B2', 'C1', 'C2'],
+    'conference': ['NLC', 'NLC', 'NIC', 'NIC', 'NLC', 'NIC'],
+    'ppg': [72.3, 68.5, 65.2, 70.1, 69.8, 67.4],
+    'oppg': [65.1, 67.2, 68.5, 66.3, 64.9, 69.2],
+    'fg%': [48.2, 45.7, 46.8, 47.3, 49.1, 44.9],
+    '3p%': [36.5, 32.1, 34.7, 35.2, 37.8, 31.4],
+    'rebounds': [32.1, 28.7, 30.5, 31.2, 33.4, 29.8],
+}
+
+team_data = pd.DataFrame(your_data)
+stats = [col for col in team_data.columns if col not in ['team', 'conference']]
+conferences = ['All'] + sorted(team_data['conference'].unique())
+teams = ['All'] + sorted(team_data['team'].unique())
+
+# 4. RUN THIS TO CREATE WIDGETS
+x_dropdown = widgets.Dropdown(
+    options=stats,
+    value='ppg',
+    description='X-Axis:',
+    style={'description_width': 'initial'},
+    layout=widgets.Layout(width='300px')
+)
+
+y_dropdown = widgets.Dropdown(
+    options=stats,
+    value='oppg',
+    description='Y-Axis:',
+    style={'description_width': 'initial'},
+    layout=widgets.Layout(width='300px')
+)
+
+conf_select = widgets.SelectMultiple(
+    options=conferences,
+    value=['All'],
+    description='Conferences:',
+    style={'description_width': 'initial'},
+    layout=widgets.Layout(width='300px', height='100px')
+)
+
+team_select = widgets.SelectMultiple(
+    options=teams,
+    value=['All'],
+    description='Teams:',
+    style={'description_width': 'initial'},
+    layout=widgets.Layout(width='300px', height='100px')
+)
+
+avg_check = widgets.Checkbox(
+    value=True,
+    description='Show Averages',
+    style={'description_width': 'initial'}
+)
+
+trend_check = widgets.Checkbox(
+    value=True,
+    description='Show Trendline',
+    style={'description_width': 'initial'}
+)
+
+flip_btn = widgets.Button(
+    description='↔ Flip Axes',
+    layout=widgets.Layout(width='150px')
+)
+
+random_btn = widgets.Button(
+    description='🎲 Randomize',
+    layout=widgets.Layout(width='150px')
+)
+
+plot_output = widgets.Output()
+
+# 5. RUN THIS TO DISPLAY CONTROLS
+display(widgets.VBox([
+    widgets.HBox([x_dropdown, y_dropdown, flip_btn, random_btn]),
+    widgets.HBox([conf_select, team_select]),
+    widgets.HBox([avg_check, trend_check]),
+    plot_output
+]))
+
+# 6. RUN THIS TO SETUP INTERACTIVITY
+def update_plot(change):
+    with plot_output:
+        clear_output(wait=True)
+
+        x_stat = x_dropdown.value
+        y_stat = y_dropdown.value
+        selected_confs = conf_select.value
+        selected_teams = team_select.value
+        show_avg = avg_check.value
+        show_trend = trend_check.value
+
+        filtered = team_data.copy()
+        if 'All' not in selected_confs:
+            filtered = filtered[filtered['conference'].isin(selected_confs)]
+        if 'All' not in selected_teams:
+            filtered = filtered[filtered['team'].isin(selected_teams)]
+
+        if len(filtered) == 0:
+            print("No teams match your filters")
+            return
+
+        fig = px.scatter(
+            filtered,
+            x=x_stat,
+            y=y_stat,
+            color='conference',
+            hover_name='team',
+            title=f"Team Comparison: {x_stat.upper()} vs {y_stat.upper()}",
+            height=600
+        )
+
+        if show_avg and len(filtered) > 0:
+            x_avg = filtered[x_stat].mean()
+            y_avg = filtered[y_stat].mean()
+
+            fig.add_hline(
+                y=y_avg,
+                line_dash="dash",
+                line_color="red",
+                annotation_text=f"Avg: {y_avg:.1f}",
+                annotation_position="bottom right"
+            )
+            fig.add_vline(
+                x=x_avg,
+                line_dash="dash",
+                line_color="blue",
+                annotation_text=f"Avg: {x_avg:.1f}",
+                annotation_position="top right"
+            )
+
+        if show_trend and len(filtered) > 2:
+            fig.add_traces(px.scatter(
+                filtered,
+                x=x_stat,
+                y=np.poly1d(np.polyfit(filtered[x_stat], filtered[y_stat], 1))(filtered[x_stat]),
+                trendline="lowess"
+            ).data[1])
+
+        fig.update_traces(
+            hovertemplate=(
+                "<b>%{customdata[0]}</b><br>"
+                "Conference: %{customdata[1]}<br>"
+                f"{x_stat}: %{{x:.1f}}<br>"
+                f"{y_stat}: %{{y:.1f}}<br>"
+                "<extra></extra>"
+            ),
+            customdata=filtered[['team', 'conference']],
+            marker=dict(size=12)
+        )
+
+        fig.update_layout(
+            xaxis_title=x_stat,
+            yaxis_title=y_stat,
+            hovermode='closest',
+            plot_bgcolor='rgba(240,240,240,0.9)'
+        )
+
+        fig.show()
+
+def flip_axes(b):
+    x_dropdown.value, y_dropdown.value = y_dropdown.value, x_dropdown.value
+
+def randomize(b):
+    x_dropdown.value = np.random.choice(stats)
+    y_dropdown.value = np.random.choice([s for s in stats if s != x_dropdown.value])
+    conf_select.value = np.random.choice(conferences[1:], size=1).tolist()
+    team_select.value = np.random.choice(teams[1:], size=2, replace=False).tolist()
+
+flip_btn.on_click(flip_axes)
+random_btn.on_click(randomize)
+
+for widget in [x_dropdown, y_dropdown, conf_select, team_select, avg_check, trend_check]:
+    widget.observe(update_plot, names='value')
+
+# 7. FINALLY RUN THIS TO INITIALIZE
+update_plot(None)
